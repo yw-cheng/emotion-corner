@@ -543,8 +543,9 @@ body.kb-hide .robot-zone{display:none}
   .big-btn{padding:10px 22px}
 }
 @media (max-height:640px){
-  header{display:none}
-  .app{grid-template-rows:1fr}
+  .logo{font-size:18px}.logo .dot{width:26px;height:26px;font-size:15px}
+  .steps span{padding:3px 8px;font-size:12px}
+  .app{padding:6px 10px 8px;gap:6px}
 }
 .stage.locked{overflow:hidden}
 .sq-slot.good{border:5px solid #27ae60;border-style:solid}
@@ -942,6 +943,7 @@ function ttsBlob(text){
     const c = await dbGet(k); if(c){ TTS.mem[k]=c; diskSync(k, c, text); return c; }
     const d = await diskGet('voice_cache', k, voiceExt()); if(d){ TTS.mem[k]=d; dbPut(k,d); return d; }   // saved file
     const a = await findAltSaved(text); if(a){ TTS.mem[k]=a; dbPut(k,a); return a; }   // saved earlier with another Gemini model: same voice, reuse it
+    if((TTS.dayOutUntil||0) > Date.now()){ const e=new Error('今天 AI 語音的額度用完了'); e.status=429; e.daily=true; throw e; }   // don't keep asking Google: answer at once
     const t0 = performance.now();
     try{
       let b;
@@ -953,7 +955,10 @@ function ttsBlob(text){
           try{ b = await fetchTTS(text.replace(/～/g,'~'), m); log('tts_model_switch', `${TTS.model} → ${m}`); TTS.model=m; savePrefs(); const el=document.getElementById('optModel'); if(el) el.value=m; k = lineKey(text); break; }
           catch(e2){ if(!e2.modelBad && !dayGone(e2)) throw e2; }
         }
-        if(!b) throw e;
+        if(!b){
+          if(dayGone(e)){ TTS.dayOutUntil = Date.now() + 20*60*1000; log('tts_day_out', '所有語音模型今天的額度都用完了，20 分鐘內不再嘗試'); }
+          throw e;
+        }
       }
       TTS.times.push((performance.now()-t0)/1000); if(TTS.times.length>60) TTS.times.shift();
       if(TTS.prov==='gemini' && !isDesigned(TTS.voice)) b = await childlike(b, text);
