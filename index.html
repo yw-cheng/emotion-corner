@@ -35,8 +35,8 @@ main{display:grid;grid-template-columns:1fr 320px;gap:16px;min-height:0}
 .left{display:grid;grid-template-rows:1fr auto;gap:12px;min-height:0}
 
 /* ---------- stage ---------- */
-.stage{position:relative;background:var(--card);border-radius:32px;border:5px solid var(--line);box-shadow:var(--shadow);overflow:hidden;min-height:0;display:flex;align-items:center;justify-content:center;padding:20px}
-.stage-inner{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:pop .45s ease}
+.stage{position:relative;background:var(--card);border-radius:32px;border:5px solid var(--line);box-shadow:var(--shadow);overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;min-height:0;display:flex;flex-direction:column;align-items:stretch;padding:20px}
+.stage-inner{width:100%;min-height:100%;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;animation:pop .45s ease}
 @keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 .prompt{font-size:clamp(20px,2.6vw,30px);font-weight:900;text-align:center;line-height:1.4}
 .sub{font-size:clamp(15px,1.7vw,19px);color:var(--soft);font-weight:700;text-align:center}
@@ -520,6 +520,40 @@ main{display:grid;grid-template-columns:1fr 320px;gap:16px;min-height:0}
 .kb-chip{margin-left:auto;margin-right:10px;font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:#eee;color:#666}
 .kb-chip[data-st="ok"]{background:#d3f3e2;color:#1e8a57}.kb-chip[data-st="wait"]{background:#fff0c9;color:#a66d00}
 body.kb-hide .robot-zone{display:none}
+
+/* small or short tablet screens: everything shrinks with the screen height, and the big box can scroll */
+.scroll-hint{position:sticky;bottom:0;height:0;flex:none;align-self:center;pointer-events:none;z-index:20}
+.scroll-hint span{display:none;position:absolute;left:50%;bottom:6px;transform:translateX(-50%);white-space:nowrap;background:var(--sun);color:#5a4300;font-weight:900;font-size:15px;padding:5px 14px;border-radius:999px;box-shadow:0 3px 8px rgba(0,0,0,.18);animation:hintBob 1.2s ease-in-out infinite}
+.stage.can-scroll .scroll-hint span{display:block}
+@keyframes hintBob{50%{transform:translate(-50%,-5px)}}
+.listen-ov,.overlay,.tb-replay{position:absolute}
+.sq-slot>b{pointer-events:none}
+.sq-slots{max-width:min(860px,118vh)}
+.sq-card{width:min(clamp(110px,15vw,170px),19vh)}
+@media (max-height:820px){
+  .app{padding:8px 12px 10px;gap:8px}
+  .logo{font-size:22px}
+  .stage{padding:12px;border-radius:24px}
+  .stage-inner{gap:10px}
+  .tool{width:clamp(50px,8.5vh,80px);height:clamp(50px,8.5vh,80px)}
+  .prompt{font-size:clamp(18px,3.4vh,28px)}
+  .choice{padding:12px 8px 10px}
+  .tb-card{padding:6px 4px}.tb-card .ic{font-size:clamp(26px,5vh,44px)}
+  .mm-s{padding:8px 14px;font-size:clamp(16px,3vh,24px)}
+  .big-btn{padding:10px 22px}
+}
+@media (max-height:640px){
+  header{display:none}
+  .app{grid-template-rows:1fr}
+}
+.stage.locked{overflow:hidden}
+.sq-slot.good{border:5px solid #27ae60;border-style:solid}
+.sq-slot.bad::after,.sq-slot.good::after{position:absolute;top:-14px;right:-10px;font-size:30px;z-index:3}
+.sq-slot.bad::after{content:"❌"}.sq-slot.good::after{content:"⭕"}
+.sq-banner{font-size:clamp(18px,3vh,26px);font-weight:900;padding:6px 18px;border-radius:999px;animation:pop .3s ease}
+.sq-banner[data-k="no"]{background:#ffe1dc;color:#c0392b}.sq-banner[data-k="ok"]{background:#d3f3e2;color:#1e8a57}
+.th3-lbl span{white-space:nowrap}
+@media (max-width:1100px) and (min-width:861px){ main{grid-template-columns:1fr 260px} }
 </style>
 </head>
 <body>
@@ -913,10 +947,11 @@ function ttsBlob(text){
       let b;
       try{ b = await fetchTTS(text.replace(/～/g,'~')); }
       catch(e){
-        if(!(e.modelBad && TTS.prov==='gemini' && !isDesigned(TTS.voice))) throw e;
+        const dayGone = x => x.status===429 && x.daily;                  // today's quota for this model is used up
+        if(!((e.modelBad || dayGone(e)) && TTS.prov==='gemini' && !isDesigned(TTS.voice))) throw e;
         for(const m of TTS_MODELS.filter(x=>x!==TTS.model)){
           try{ b = await fetchTTS(text.replace(/～/g,'~'), m); log('tts_model_switch', `${TTS.model} → ${m}`); TTS.model=m; savePrefs(); const el=document.getElementById('optModel'); if(el) el.value=m; k = lineKey(text); break; }
-          catch(e2){ if(!e2.modelBad) throw e2; }
+          catch(e2){ if(!e2.modelBad && !dayGone(e2)) throw e2; }
         }
         if(!b) throw e;
       }
@@ -1090,7 +1125,13 @@ async function prepareAll(){
       const t=lines[i++];
       try{ await ttsBlob(t); done++; }
       catch(e){
-        if(e.status===429){ i--; await sleep(((e.retry||10)+1)*1000); continue; }     // quota for this minute: wait, then go on
+        if(e.status===429 && e.daily && TTS.prov==='gemini' && !isDesigned(TTS.voice)){   // today's quota for this model is used up: move to another TTS model
+          const tried = (prepareAll.tried = prepareAll.tried || new Set([TTS.model]));
+          const next = TTS_MODELS.find(m=>!tried.has(m));
+          if(next){ tried.add(next); log('tts_model_switch', `${TTS.model} → ${next}（今日額度用完）`); TTS.model=next; savePrefs(); const el=document.getElementById('optModel'); if(el) el.value=next; i--; continue; }
+          fail++; lastErr='今天所有語音模型的額度都用完了，明天再按一次就會接著做。'; i=lines.length; break;
+        }
+        if(e.status===429){ i--; await sleep(Math.min(60,(e.retry||10)+1)*1000); continue; }     // quota for this minute: wait, then go on
         fail++; lastErr=e.message;
       }
       show();
@@ -1268,10 +1309,11 @@ function say(text, {hold=false, narrator=false, who=''}={}){
   return new Promise(res=>{
     const done = () => { if(mon){ const m=document.getElementById('monTalk'); if(m){ m.classList.remove('talk'); clearInterval(m._flip); const im=m.querySelector('img'); if(im && m.dataset.closed) im.src=m.dataset.closed; } } if(my===sayGen){ S.speaking=false; S.lastMove=Date.now(); } clearTimeout(safety); if(!hold) bubbleTimer = setTimeout(()=>bubble.classList.remove('show'), 2500); res(); };
     const est = text.length*230/S.rate + 700;
-    const safety = setTimeout(done, est + (TTS.key?12000:4000));
+    let safety = setTimeout(done, est + (TTS.key?12000:4000));
     if(!S.voice){ clearTimeout(safety); setTimeout(done, est); return; }
     if(!mon && kbReady()){ clearTimeout(safety); KB.busy=my; kbSpeak(text, my, narrator?'narrator':'robot').catch(e=>log('kebbi_error', e.message)).then(()=>{ if(KB.busy===my) KB.busy=null; done(); }); return; }
     const browserTTS = ()=>{
+      clearTimeout(safety); safety = setTimeout(done, est + 2500);     // computer voice: don't wait long if it never reports that it finished
       if(TTS.key || DISK_READ) fbBadge();
       if(!('speechSynthesis' in window)){ setTimeout(done, est); return; }
       stopAudio();
@@ -1376,7 +1418,7 @@ function burst(chars, n=7){
 
 /* ---- stage ---- */
 function setPhase(p){ S.phase=p; document.querySelectorAll('#steps span').forEach(s=>s.classList.toggle('on', s.dataset.s===p)); }
-function render(html){ const o = stage.querySelector('.overlay'), lo = stage.querySelector('.listen-ov'); stage.innerHTML = `<div class="stage-inner">${html}</div>`; if(o) stage.appendChild(o); if(lo) stage.appendChild(lo); return stage.firstElementChild; }
+function render(html){ const o = stage.querySelector('.overlay'), lo = stage.querySelector('.listen-ov'); stage.innerHTML = `<div class="stage-inner">${html}</div><div class="scroll-hint"><span>⬇ 往下滑</span></div>`; stage.scrollTop = 0; if(o) stage.appendChild(o); if(lo) stage.appendChild(lo); return stage.firstElementChild; }
 
 /* ================= flow ================= */
 function showSleep(){
@@ -3011,6 +3053,11 @@ const SQ_LINES = { intro1:'接下來，我們來玩「怪獸排一排」！', in
   sum:'其實，情緒就是我們對一件事情的反應喔！發生了什麼事情，跟我們的心情是有關係的喔～' };
 const sqCause = s => `因為${mtText(s.p[2]).replace(/[。！]$/,'')}，所以小怪獸覺得${s.e[0]}。`;
 const SQ_POS = ['0% 0%','100% 0%','0% 100%','100% 100%'];
+function sqBanner(el, text, kind){
+  let b = el.querySelector('.sq-banner');
+  if(!b){ b=document.createElement('div'); b.className='sq-banner'; el.querySelector('.sq-slots').after(b); }
+  b.textContent = text; b.dataset.k = kind||''; b.style.display = text ? '' : 'none';
+}
 async function monsterOrder(){
   setPhase('detective'); log('screen','monster_order');
   stopActs(); face('happy'); act('a-waveR',1500);
@@ -3051,9 +3098,13 @@ async function monsterOrder(){
       if(!wrongSlots.length) break;
       chime(false); face('love');
       wrongSlots.forEach(x=>x.classList.add('bad'));
+      slots.filter(x=>!wrongSlots.includes(x)).forEach(x=>x.classList.add('good'));
+      sqBanner(el, `❌ 有 ${wrongSlots.length} 張放錯了，再想一想！`, 'no');
       slots.filter(x=>!wrongSlots.includes(x)).forEach(x=>x.querySelector('.sq-card').classList.add('lock'));
       await say(SQ_LINES.wrong, {hold:true});
+      await sleep(600);
       wrongSlots.forEach(x=>{ x.classList.remove('bad'); pool.appendChild(x.querySelector('.sq-card')); });
+      slots.forEach(x=>x.classList.remove('good')); sqBanner(el, '');
       if(checks>=2){                                     // help: light up the card for the first empty box
         const k = slots.findIndex(x=>!x.querySelector('.sq-card'));
         const c = pool.querySelector(`.sq-card[data-i="${k}"]`); if(c){ c.classList.add('hint'); await say(SQ_LINES.hint, {hold:true}); }
@@ -3064,7 +3115,9 @@ async function monsterOrder(){
     el.querySelectorAll('.sq-card').forEach(b=>b.classList.add('lock'));
     log('sq_done', `${s.id} ${s.t}|檢查${checks}次`);
     chime(true); face('happy'); act('a-cheer',1600); burst(['⭐','✨'],6);
+    slots.forEach(x=>x.classList.add('good')); sqBanner(el, '⭕ 排對了！你好厲害！', 'ok');
     await say(SQ_LINES.right);
+    slots.forEach(x=>x.classList.remove('good')); sqBanner(el, '');
     await say(SQ_LINES.read);
     for(let k=0;k<4;k++){ slots.forEach((x,j)=>x.classList.toggle('now', j===k)); await say(mtText(s.p[k])); await sleep(200); }
     slots.forEach(x=>x.classList.remove('now'));
@@ -3647,6 +3700,9 @@ setInterval(()=>{
   act(pick, ANIM[pick]?.ms||1800).then(()=>{ if(!ACTS.concat(POSES).some(c=>robot.classList.contains(c))) face(prev); });
 }, 1000);
 
+setInterval(()=>{ const more = stage.scrollHeight - stage.clientHeight - stage.scrollTop > 24; stage.classList.toggle('can-scroll', more); }, 600);
+// an overlay (listening, camera, story replay) covers the box: jump to the top and stop scrolling while it is open
+new MutationObserver(()=>{ const ov = stage.querySelector(':scope > .listen-ov, :scope > .overlay, :scope > .tb-replay'); if(ov) stage.scrollTop = 0; stage.classList.toggle('locked', !!ov); }).observe(stage, {childList:true});
 log('session_start', navigator.userAgent);
 showCheckin();
 </script>
