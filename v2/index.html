@@ -1338,9 +1338,10 @@ function gesture(){
 /* ================= 凱比機器人連線（Firebase Realtime Database，REST + 串流，不用安裝 SDK） =================
    只用平板：一切照舊。搭配凱比：機器人和旁白的話由凱比說（同一個 AI 童聲），表情、動作也送給凱比；小怪獸的聲音和音效留在平板。
    資料路徑：kebbi/<配對碼>/cmd（平板 → 凱比的指令）、kebbi/<配對碼>/ev（凱比 → 平板：beat 心跳、start/end/err、touch 觸摸） */
-const KB = { on:false, url:'', room:'', hide:false, es:null, lastSeen:0, seq:0, pend:{}, seen:new Set(), lastFace:'', urlOk:{}, info:null, busy:null };
+const KB = { on:false, url:'https://emotion-corner-kebbi-default-rtdb.asia-southeast1.firebasedatabase.app', room:'', hide:false, es:null, lastSeen:0, seq:0, pend:{}, seen:new Set(), lastFace:'', urlOk:{}, info:null, busy:null };
 try{ Object.assign(KB, JSON.parse(localStorage.getItem('ec_kebbi')||'{}')); }catch(e){}
 KB.seen=new Set(); KB.pend={}; KB.urlOk={}; KB.lastSeen=0; KB.es=null;
+if(!KB.url) KB.url='https://emotion-corner-kebbi-default-rtdb.asia-southeast1.firebasedatabase.app';   // 預設：情緒角的凱比資料庫
 if(!KB.room) KB.room = Math.random().toString(36).slice(2,8).toUpperCase();
 const saveKB = ()=>{ try{ localStorage.setItem('ec_kebbi', JSON.stringify({on:KB.on,url:KB.url,room:KB.room,hide:KB.hide})); }catch(e){} };
 const kbBase = ()=> `${KB.url.replace(/\/+$/,'')}/kebbi/${encodeURIComponent(KB.room)}`;
