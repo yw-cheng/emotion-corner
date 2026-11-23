@@ -605,7 +605,7 @@ body.kb-hide .robot-zone{display:none}
 <body>
 <div class="app">
   <header>
-    <div class="logo" id="logo" title="老師：長按 2 秒開啟設定"><span class="dot">💛</span>情緒角</div>
+    <div class="logo" id="logo" title="老師：長按 2 秒或連點 5 下開啟設定"><span class="dot">💛</span>情緒角</div>
     <div class="kb-chip" id="kbChip" style="display:none"></div>
     <div class="steps" id="steps">
       <span data-s="checkin">我是誰</span><span data-s="sleep">叫醒機器人</span><span data-s="greet">打招呼</span><span data-s="thermo">心情溫度計</span><span data-s="talk">說說看</span><span data-s="detective">情緒小遊戲</span>
@@ -3709,9 +3709,13 @@ $('#btnCam').onclick = ()=>{ log('tool','camera'); openCamera('photo'); };
 $('#btnQR').onclick  = ()=>{ log('tool','qr'); openCamera('qr'); };
 
 // teacher panel: long-press the 情緒角 title for 2 s
-let lp; const logo=$('#logo');
-logo.addEventListener('pointerdown',()=>{ lp=setTimeout(openTeacher,2000); });
-['pointerup','pointerleave','pointercancel'].forEach(ev=>logo.addEventListener(ev,()=>clearTimeout(lp)));
+// 平板上長按文字常會被選字／跳出選單打斷，所以：長按 2 秒（手指稍微移動也可以），或 3 秒內連點 5 下，都會打開
+let lp, taps=[]; const logo=$('#logo');
+logo.style.userSelect='none'; logo.style.webkitUserSelect='none'; logo.style.webkitTouchCallout='none'; logo.style.touchAction='none';
+logo.addEventListener('contextmenu', e=>e.preventDefault());
+logo.addEventListener('pointerdown',e=>{ clearTimeout(lp); lp=setTimeout(()=>{ lp=null; openTeacher(); },2000);
+  const now=Date.now(); taps=taps.filter(t=>now-t<3000); taps.push(now); if(taps.length>=5){ taps=[]; clearTimeout(lp); openTeacher(); } });
+['pointerup','pointercancel'].forEach(ev=>logo.addEventListener(ev,()=>clearTimeout(lp)));
 function openTeacherPrep(){ countPrepared(); }
 function openTeacher(){
   const done = LOG.some(l=>l.event==='complete'), interrupts = LOG.filter(l=>l.event==='tap_while_busy').length;
